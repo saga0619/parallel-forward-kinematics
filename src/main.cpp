@@ -56,6 +56,7 @@ void run_iteration(Model &model, std::string end_effector_name, VectorNd joint_l
     Vector3d end_effector_point = Vector3d::Zero();
 
     Vector3d end_effector_position;
+    Matrix3d end_effector_rotation;
 
     for (unsigned int iter = 0; iter < num_iterations; ++iter)
     {
@@ -68,6 +69,8 @@ void run_iteration(Model &model, std::string end_effector_name, VectorNd joint_l
 
         end_effector_position = CalcBodyToBaseCoordinates(
             model_local, Q, end_effector_id, end_effector_point, true);
+        end_effector_rotation = CalcBodyWorldOrientation(
+            model_local, Q, end_effector_id, true);
     }
 
     std::cout << "thread id : " << thread_id << " : end " << end_effector_position.transpose() << std::endl;
