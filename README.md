@@ -8,6 +8,7 @@ A simple C++ program to perform forward kinematics calculations on the Franka Em
 - Performs forward kinematics calculations.
 - Command-line options:
   - `-u`: Specify URDF file path.
+  - `-e`: Specify End-effector name.
   - `-n`: Set number of iterations (default: 10000).
   - `-t`: Set number of threads (default: 1).
   - `-v`: Enable verbose output.
@@ -59,6 +60,7 @@ Run the program with optional command-line arguments:
 ### Options
 
 - `-u <file>`: Specify the URDF file path.
+- `-e <name>`: Specift ee name.
 - `-n <number>`: Set the number of iterations. (default : 10000)
 - `-t <number>`: Set the number of threads. (default : 1)
 - `-v`: Enable verbose output.
@@ -67,7 +69,7 @@ Run the program with optional command-line arguments:
 ### Example
 
 ```bash
-./para_fk -u panda.urdf -n 5000 -t 5 -v
+./para_fk -u panda.urdf -e panda_hand -n 5000 -t 5 -v
 ```
 
 ---

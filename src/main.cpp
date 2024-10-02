@@ -6,6 +6,7 @@
 #include <chrono>
 #include <getopt.h>
 #include <thread>
+#include <tinyxml2.h> // TinyXML2 헤더 파일 포함
 
 #ifndef URDF_DIR
 #define URDF_DIR ""
@@ -13,32 +14,27 @@
 
 using namespace RigidBodyDynamics;
 using namespace RigidBodyDynamics::Math;
+using namespace tinyxml2;
 
 void print_help(const char *program_name)
 {
     std::cout << "Usage: " << program_name << " [Option]\n"
               << "Option:\n"
               << "  -u <urdf file path> : urdf path \n"
+              << "  -e <end effector>   : end effector name \n"
               << "  -n <interation>     : iteration (default : 10000)\n"
               << "  -t <thread count>   : thread count (default : 1)\n"
               << "  -v                  : verbose \n"
               << "  -h                  : help \n";
 }
 
-void run_iteration(Model &model, unsigned int num_iterations, int thread_id)
+void run_iteration(Model &model, std::string end_effector_name, VectorNd joint_limits_lower, VectorNd joint_limits_upper, unsigned int num_iterations, int thread_id)
 {
     RigidBodyDynamics::Model model_local = model;
 
-    // print current pid 
+    // print current pid
     // std::cout << "thread id : " << thread_id << " : start" << std::endl;
     unsigned int dof = model_local.dof_count;
-
-    // Panda 로봇의 관절 한계 (라디안)
-    VectorNd joint_limits_lower(dof);
-    VectorNd joint_limits_upper(dof);
-
-    joint_limits_lower.setConstant(-M_PI);
-    joint_limits_upper.setConstant(M_PI);
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -49,9 +45,8 @@ void run_iteration(Model &model, unsigned int num_iterations, int thread_id)
         distributions.emplace_back(joint_limits_lower[i], joint_limits_upper[i]);
     }
 
-    const char *end_effector_name = "panda_hand";
 
-    unsigned int end_effector_id = model_local.GetBodyId(end_effector_name);
+    unsigned int end_effector_id = model_local.GetBodyId(end_effector_name.c_str());
     if (end_effector_id == std::numeric_limits<unsigned int>::max())
     {
         std::cerr << "cannot find end effector " << end_effector_name << std::endl;
@@ -64,7 +59,7 @@ void run_iteration(Model &model, unsigned int num_iterations, int thread_id)
 
     for (unsigned int iter = 0; iter < num_iterations; ++iter)
     {
-        //generate random joint angles
+        // generate random joint angles
         VectorNd Q(dof);
         for (unsigned int i = 0; i < dof; ++i)
         {
@@ -75,13 +70,14 @@ void run_iteration(Model &model, unsigned int num_iterations, int thread_id)
             model_local, Q, end_effector_id, end_effector_point, true);
     }
 
-    std::cout << "thread id : " << thread_id << " : end "<< end_effector_position.transpose() << std::endl;
+    std::cout << "thread id : " << thread_id << " : end " << end_effector_position.transpose() << std::endl;
 }
 
 int main(int argc, char *argv[])
 {
     // 기본값 설정
     std::string urdf_filename = "panda.urdf";
+    std::string end_effector_name = "panda_hand";
     unsigned int num_iterations = 10000;
     unsigned int thread_count = 1;
     bool verbose = false;
@@ -94,12 +90,15 @@ int main(int argc, char *argv[])
 
     // 명령줄 옵션 파싱
     int opt;
-    while ((opt = getopt(argc, argv, "u:n:t:vh")) != -1)
+    while ((opt = getopt(argc, argv, "u:e:n:t:vh")) != -1)
     {
         switch (opt)
         {
         case 'u':
             urdf_filename = optarg;
+            break;
+        case 'e':
+            end_effector_name = optarg;
             break;
         case 'n':
             num_iterations = std::stoi(optarg);
@@ -135,9 +134,83 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    // 모델의 자유도 수 확인
+    std::vector<std::pair<double, double>> joint_limits;
+
+    XMLDocument urdf_doc;
+
+    XMLError load_result = urdf_doc.LoadFile(urdf_filename.c_str());
+    if (load_result != XML_SUCCESS)
+    {
+        std::cerr << "failed to load urdf file." << std::endl;
+        return -1;
+    }
+
+    XMLElement *robot_element = urdf_doc.FirstChildElement("robot");
+    if (!robot_element)
+    {
+        std::cerr << "failed to find robot" << std::endl;
+        return -1;
+    }
+
+    for (XMLElement *joint_element = robot_element->FirstChildElement("joint");
+         joint_element != nullptr;
+         joint_element = joint_element->NextSiblingElement("joint"))
+    {
+
+        const char *joint_name = joint_element->Attribute("name");
+        const char *joint_type = joint_element->Attribute("type");
+
+        if (!joint_name || !joint_type)
+        {
+            continue;
+        }
+
+        // Revolute 또는 Continuous 관절만 처리
+        if (std::string(joint_type) == "revolute" || std::string(joint_type) == "continuous")
+        {
+            XMLElement *limit_element = joint_element->FirstChildElement("limit");
+            if (limit_element)
+            {
+                double lower = 0.0;
+                double upper = 0.0;
+                limit_element->QueryDoubleAttribute("lower", &lower);
+                limit_element->QueryDoubleAttribute("upper", &upper);
+                joint_limits.push_back(std::make_pair(lower, upper));
+            }
+        }
+    }
+
+    if (verbose)
+    {
+        std::cout << "joint limits" << std::endl;
+        // print joint limits
+        int joint_index = 0;
+        for (auto &joint_limit : joint_limits)
+        {
+            std::cout << joint_index++ << " : " << joint_limit.first << " ~ " << joint_limit.second << std::endl;
+        }
+    }
+    // int dof = model.dof_count;
     unsigned int dof = model.dof_count;
-    std::cout << "model dof : " << dof << std::endl;
+    if(verbose)
+    {
+        std::cout << "model dof : " << dof << std::endl;
+        std::cout << "end effector name : " << end_effector_name << std::endl;
+    }
+    // 관절 한계를 저장할 벡터 생성
+    VectorNd joint_limits_lower = VectorNd::Zero(dof);
+    VectorNd joint_limits_upper = VectorNd::Zero(dof);
+
+    for (unsigned int i = 0; i < dof; ++i)
+    {
+        joint_limits_lower[i] = joint_limits[i].first;
+        joint_limits_upper[i] = joint_limits[i].second;
+    }
+
+    // XMLE`
+    // URDF 파일을 다시 로드하여 각 조인트의 제한 정보 확인
+
+    // 모델의 자유도 수 확인
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -146,7 +219,7 @@ int main(int argc, char *argv[])
     std::vector<std::thread> threads;
     for (unsigned int i = 0; i < thread_count; ++i)
     {
-        threads.emplace_back(run_iteration, std::ref(model), num_iterations_per_thread, i);
+        threads.emplace_back(run_iteration, std::ref(model), end_effector_name, joint_limits_lower, joint_limits_upper, num_iterations_per_thread, i);
     }
 
     for (auto &thread : threads)
@@ -160,7 +233,7 @@ int main(int argc, char *argv[])
 
     double elapsed_time_sec = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
 
-    if(elapsed_time > 1000)
+    if (elapsed_time > 1000)
         std::cout << num_iterations << " forward kinematics calculation : " << elapsed_time_sec << " s" << std::endl;
     else
         std::cout << num_iterations << " forward kinematics calculation : " << elapsed_time << " ms" << std::endl;

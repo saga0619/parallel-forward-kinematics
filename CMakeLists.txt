@@ -19,4 +19,5 @@ target_link_libraries(para_fk
     ${RBDL_LIBRARY}
     ${RBDL_URDFREADER_LIBRARY}
     pthread
+    tinyxml2
     )
