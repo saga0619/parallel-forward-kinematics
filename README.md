@@ -75,3 +75,5 @@ Run the program with optional command-line arguments:
 ---
 
 Ensure that the `panda.urdf` file is available in the specified location or provide the correct path using the `-u` option.
+
+With recent CPUs,,,,, 100 million interations and 24 threads : 6.14 seconds.
